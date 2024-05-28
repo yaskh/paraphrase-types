@@ -5,6 +5,11 @@ import torch
 from datasets import load_dataset
 from scipy.spatial import distance
 import seaborn as sns
+import time
+
+mps_device = torch.device("mps")
+mps_device = torch.device("cpu")
+batch_size = 250
 
 def load_model(model_path):
     tokenizer_bert = AutoTokenizer.from_pretrained(model_path)
@@ -22,20 +27,22 @@ def filter_data(train_df):
     return reduced_to_similar_paraphrase_type
 
 def encode(sentences, model, tokenizer):
+    start = time.time()
     encoded_input = tokenizer(sentences, padding=True, truncation=True, return_tensors='pt')
     with torch.no_grad():
-        model_output = model(**encoded_input)
-    return model_output.last_hidden_state.mean(dim=1).squeeze().numpy()
+        model_output = model(**encoded_input.to(mps_device))
+    final_tensor = model_output.last_hidden_state.mean(dim=1).squeeze()
+    print(f"Time taken to encode: {time.time() - start}")
+    return final_tensor
 
 def calculate_embeddings(dataset, model, tokenizer):
     embeddings_flattened = []
-    batch_size = 32
     for i in range(0, len(dataset), batch_size):
         batch = dataset.iloc[i:i+batch_size]        
-        batch_embedding1 = encode(batch['sentence1'], model, tokenizer)
-        batch_embedding2 = encode(batch['sentence2'], model, tokenizer)
+        batch_embedding1 = encode(batch['sentence1'].to_list(), model, tokenizer)
+        batch_embedding2 = encode(batch['sentence2'].to_list(), model, tokenizer)
         for emb1, emb2 in zip(batch_embedding1, batch_embedding2):
-            embeddings_flattened = [].append(torch.stack([emb1, emb2]))
+            embeddings_flattened.append(torch.stack([emb1, emb2]))
 
     return np.array(embeddings_flattened)
 
@@ -60,14 +67,23 @@ def filter_for_single_pt(df):
         
     return paraphrase_type_data_dict
 
+def plot_hist(array_mean):
+    window_size = 50
+    averages = [np.mean(array_mean[i:i + window_size]) for i in range(0, len(array_mean), window_size)]
+    indices = list(range(0, len(array_mean), window_size))
 
-if __name__ == '__main__':
-    df = load_dataset("jpwahle/etpc")['train'].to_pandas()
-    single_type_dict = filter_for_single_pt(df)
-    bert_model_path = '../out/cls-models/bert-large-uncased-jpwahle/etpc-paraphrase-detection/checkpoint-3045'
-    bert_model, bert_tokenizer = load_model(bert_model_path)
+    plt.figure(figsize=(25, 10))
+    plt.plot(indices, averages, color='blue', marker='o', linestyle='-')  # Connect points with a line
+    plt.title('Scatter Plot of Average Values of Array Segments')
+    plt.xlabel('Array Index')
+    plt.ylabel('Average Value')
+    plt.grid(True)
+    plt.show()
 
-    for key, value in single_type_dict.items():
-        _, _, embeddings = calculate_embeddings(value, bert_model, bert_tokenizer)
-        calculate_embeddings[key] = embeddings
-        break
+files = glob.glob('src/out/embeddings/*.npy')
+for file in files:
+    data = np.load(file)
+    print(data[1][1][1])
+    result = data[:, 1, :] - data[:, 0, :]
+    array_mean = np.mean(result, axis=0)
+    plot_hist(array_mean)

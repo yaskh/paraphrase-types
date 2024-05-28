@@ -594,6 +594,11 @@ def main():
     else:
         results = pd.DataFrame(results)
 
+    import os
+
+    output_dir = os.path.dirname(f"{args.model_name}-{args.dataset_name}-paraphrase-{args.task_name}-results.csv")
+    os.makedirs(output_dir, exist_ok=True)
+
     # Store results
     results.to_csv(
         f"{args.model_name}-{args.dataset_name}-paraphrase-{args.task_name}-results.csv",

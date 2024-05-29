@@ -136,3 +136,4 @@ dmypy.json
 *.out
 wandb/
 bert*/
+.vscode/settings.json
